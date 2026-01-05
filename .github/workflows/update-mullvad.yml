@@ -1,0 +1,57 @@
+name: Update Mullvad Domain List
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # 每周一 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download and process Mullvad rules
+        run: |
+          set -e
+
+          curl -fsSL \
+            https://raw.githubusercontent.com/mullvad/dns-blocklists/main/output/doh/doh_adblock.txt \
+            -o mullvad_raw.txt
+
+          python3 - << 'EOF'
+          domains = set()
+
+          with open("mullvad_raw.txt", "r", encoding="utf-8") as f:
+              for line in f:
+                  line = line.strip()
+                  if not line:
+                      continue
+
+                  # 去掉通配符 *
+                  line = line.replace("*", "")
+
+                  # 去掉前导点 .
+                  if line.startswith("."):
+                      line = line[1:]
+
+                  if line:
+                      domains.add(line)
+
+          with open("mullvad.txt", "w", encoding="utf-8") as f:
+              for d in sorted(domains):
+                  f.write(d + "\n")
+          EOF
+
+          rm -f mullvad_raw.txt
+
+      - name: Commit & Push
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          git add mullvad.txt
+          git commit -m "Auto update mullvad domain list" || echo "No changes"
+          git push
